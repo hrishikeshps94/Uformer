@@ -24,7 +24,7 @@ class Options():
 
         # args for saving 
         parser.add_argument('--save_dir', type=str, default ='./logs/',  help='save dir')
-        parser.add_argument('--save_images', action='store_true',default=False)
+        parser.add_argument('--save_images', action='store_true',default=True)
         parser.add_argument('--env', type=str, default ='_',  help='env')
         parser.add_argument('--checkpoint', type=int, default=50, help='checkpoint')
 
