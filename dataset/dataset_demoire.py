@@ -2,6 +2,11 @@ import numpy as np
 import os
 from torch.utils.data import Dataset
 import torch
+import sys
+import matplotlib.pyplot as plt
+dir_name = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(dir_name,'../dataset/'))
+sys.path.append(os.path.join(dir_name,'..'))
 from utils import is_png_file, load_img, Augment_RGB_torch
 import torch.nn.functional as F
 import random
@@ -11,7 +16,7 @@ from natsort import natsorted
 from glob import glob
 augment   = Augment_RGB_torch()
 transforms_aug = [method for method in dir(augment) if callable(getattr(augment, method)) if not method.startswith('_')] 
-
+import torchvision.transforms as T
 
 def is_image_file(filename):
     return any(filename.endswith(extension) for extension in ['jpeg', 'JPEG', 'jpg', 'png', 'JPG', 'PNG', 'gif'])
@@ -29,11 +34,12 @@ class DataLoaderTrain(Dataset):
         clean_files = sorted(os.listdir(os.path.join(rgb_dir, gt_dir)))
         noisy_files = sorted(os.listdir(os.path.join(rgb_dir, input_dir)))
         
-        self.clean_filenames = [os.path.join(rgb_dir, gt_dir, x) for x in clean_files if is_png_file(x)]
-        self.noisy_filenames = [os.path.join(rgb_dir, input_dir, x)       for x in noisy_files if is_png_file(x)]
-        
+        self.clean_filenames = [os.path.join(rgb_dir, gt_dir, x) for x in clean_files if is_image_file(x)]
+        self.noisy_filenames = [os.path.join(rgb_dir, input_dir, x)       for x in noisy_files if is_image_file(x)]
+        # self.clean_filenames = [os.path.join(rgb_dir, gt_dir, x) for x in clean_files]
+        # self.noisy_filenames = [os.path.join(rgb_dir, input_dir, x) for x in noisy_files ]
         self.img_options=img_options
-
+        # self.random_crop = T.RandomCrop((512,512))
         self.tar_size = len(self.clean_filenames)  # get the size of target
 
     def __len__(self):
@@ -49,7 +55,16 @@ class DataLoaderTrain(Dataset):
 
         clean_filename = os.path.split(self.clean_filenames[tar_index])[-1]
         noisy_filename = os.path.split(self.noisy_filenames[tar_index])[-1]
-
+        # cat_im = torch.cat([clean,noisy],dim=0)
+        # cat_crop = self.random_crop(cat_im)
+        # clean,noisy = torch.tensor_split(cat_crop,2)
+        # disp = [clean.permute(1,2,0).numpy(),noisy.permute(1,2,0).numpy()]
+        # fig = plt.figure(figsize=(15,15))
+        # for i in range(2):
+        #     plt.subplot(1,2,i+1)    # the number of images in the grid is 5*5 (25)
+        #     plt.imshow(disp[i])
+        # plt.savefig(f'/mnt/c/Users/Hrishikesh/Desktop/hrishi/WORK/RESEARCH/2022/cvip/code/Uformer/LCD/result/{index}.jpg')
+        # plt.close()
         #Crop Input and Target
         ps = self.img_options['patch_size']
         H = clean.shape[1]
@@ -148,3 +163,10 @@ def get_validation_data(rgb_dir):
 def get_test_data(rgb_dir, img_options=None):
     assert os.path.exists(rgb_dir)
     return DataLoaderTest(rgb_dir, img_options)
+
+
+# img_options_train = {'patch_size':256}
+# train_dataset = get_training_data('/mnt/c/Users/Hrishikesh/Desktop/hrishi/WORK/RESEARCH/2022/cvip/code/Uformer/LCD', img_options_train)
+# for x in train_dataset:
+#     pass
+ 

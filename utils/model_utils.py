@@ -1,4 +1,5 @@
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 import os
 from collections import OrderedDict
@@ -52,6 +53,35 @@ def load_optim(optimizer, weights):
     optimizer.load_state_dict(checkpoint['optimizer'])
     for p in optimizer.param_groups: lr = p['lr']
     return lr
+
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
+
+
+def get_world_size():
+    if not is_dist_avail_and_initialized():
+        return 1
+    return dist.get_world_size()
+
+
+def get_rank():
+    if not is_dist_avail_and_initialized():
+        return 0
+    return dist.get_rank()
+
+
+def is_main_process():
+    return get_rank() == 0
+
+def save_on_master(*args, **kwargs):
+    if is_main_process():
+        return True
+    else: 
+        return False
 
 def get_arch(opt):
     from model import Uformer, UNet

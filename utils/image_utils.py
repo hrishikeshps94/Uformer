@@ -30,6 +30,7 @@ def load_npy(filepath):
 
 def load_img(filepath):
     img = cv2.cvtColor(cv2.imread(filepath), cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img,(1024,1024))
     img = img.astype(np.float32)
     img = img/255.
     return img

@@ -909,6 +909,8 @@ class LeWinTransformerBlock(nn.Module):
         B, L, C = x.shape
         H = int(math.sqrt(L))
         W = int(math.sqrt(L))
+        # H=1024
+        # W=2048
         
         ## input mask
         if mask != None:

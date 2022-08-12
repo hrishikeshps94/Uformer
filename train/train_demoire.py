@@ -16,11 +16,6 @@ print(opt)
 
 import utils
 from dataset.dataset_demoire import *
-######### Set GPUs ###########
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
-import torch
-torch.backends.cudnn.benchmark = True
 
 import torch.nn as nn
 import torch.optim as optim
@@ -35,14 +30,40 @@ import datetime
 from pdb import set_trace as stx
 
 from losses import CharbonnierLoss
-
+import torch.distributed as dist
+import torch.backends.cudnn as cudnn
 from tqdm import tqdm 
 from warmup_scheduler import GradualWarmupScheduler
 from torch.optim.lr_scheduler import StepLR
 from timm.utils import NativeScaler
-
+from torchsummary import summary
+from utils import *
 # from utils.loader import  get_training_data,get_validation_data
 
+######### Set GPUs ###########
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_ids
+
+
+###########DDP Intilaiser#########################
+
+if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+    opt.rank = int(os.environ["RANK"])
+    opt.world_size = int(os.environ['WORLD_SIZE'])
+    opt.gpu = int(os.environ['LOCAL_RANK'])
+elif torch.cuda.is_available():
+    print('Will run the code on one GPU.')
+    opt.rank, opt.gpu, opt.world_size = 0, 0, 1
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29500'
+dist.init_process_group(backend="nccl",init_method=opt.dist_url,world_size=opt.world_size,rank=opt.rank)
+
+torch.cuda.set_device(opt.gpu)
+print('| distributed init (rank {}): {}'.format(
+    opt.rank, opt.dist_url), flush=True)
+dist.barrier()
+
+torch.backends.cudnn.benchmark = True
 
 
 ######### Logs dir ###########
@@ -80,8 +101,11 @@ else:
 
 
 ######### DataParallel ########### 
-model_restoration = torch.nn.DataParallel (model_restoration) 
+
+# model_restoration = torch.nn.DataParallel (model_restoration) 
 model_restoration.cuda() 
+# print(summary(model_restoration,(3,256,256)))
+model_restoration = torch.nn.parallel.DistributedDataParallel(model_restoration,[opt.gpu])
      
 
 ######### Scheduler ###########
@@ -127,11 +151,13 @@ criterion = CharbonnierLoss().cuda()
 print('===> Loading datasets')
 img_options_train = {'patch_size':opt.train_ps}
 train_dataset = get_training_data(opt.train_dir, img_options_train)
-train_loader = DataLoader(dataset=train_dataset, batch_size=opt.batch_size, shuffle=True, 
-        num_workers=opt.train_workers, pin_memory=False, drop_last=False)
+train_sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True)
+train_loader = DataLoader(dataset=train_dataset, batch_size=opt.batch_size, shuffle=False, 
+        num_workers=opt.train_workers, pin_memory=False, drop_last=False,sampler=train_sampler)
 val_dataset = get_validation_data(opt.val_dir)
-val_loader = DataLoader(dataset=val_dataset, batch_size=opt.batch_size, shuffle=False, 
-        num_workers=opt.eval_workers, pin_memory=False, drop_last=False)
+val_sampler = torch.utils.data.DistributedSampler(val_dataset, shuffle=False)
+val_loader = DataLoader(dataset=val_dataset, batch_size=1, shuffle=False, 
+        num_workers=opt.eval_workers, pin_memory=False, drop_last=False,sampler=val_sampler)
 
 len_trainset = train_dataset.__len__()
 len_valset = val_dataset.__len__()
@@ -165,6 +191,8 @@ print("\nEvaluation after every {} Iterations !!!\n".format(eval_now))
 loss_scaler = NativeScaler()
 torch.cuda.empty_cache()
 for epoch in range(start_epoch, opt.nepoch + 1):
+    train_loader.sampler.set_epoch(epoch)
+    val_loader.sampler.set_epoch(epoch)
     epoch_start_time = time.time()
     epoch_loss = 0
     train_id = 1
@@ -198,7 +226,7 @@ for epoch in range(start_epoch, opt.nepoch + 1):
                         restored = model_restoration(input_)
                     restored = torch.clamp(restored,0,1)  
                     psnr_val_rgb.append(utils.batch_PSNR(restored, target, False).item())
-
+                torch.cuda.synchronize()#####
                 psnr_val_rgb = sum(psnr_val_rgb)/len_valset
                 
                 if psnr_val_rgb > best_psnr:
@@ -223,15 +251,16 @@ for epoch in range(start_epoch, opt.nepoch + 1):
     print("------------------------------------------------------------------")
     with open(logname,'a') as f:
         f.write("Epoch: {}\tTime: {:.4f}\tLoss: {:.4f}\tLearningRate {:.6f}".format(epoch, time.time()-epoch_start_time,epoch_loss, scheduler.get_lr()[0])+'\n')
-
-    torch.save({'epoch': epoch, 
-                'state_dict': model_restoration.state_dict(),
-                'optimizer' : optimizer.state_dict()
-                }, os.path.join(model_dir,"model_latest.pth"))   
-
-    if epoch%opt.checkpoint == 0:
+    if save_on_master():
         torch.save({'epoch': epoch, 
                     'state_dict': model_restoration.state_dict(),
                     'optimizer' : optimizer.state_dict()
-                    }, os.path.join(model_dir,"model_epoch_{}.pth".format(epoch))) 
+                    }, os.path.join(model_dir,"model_latest.pth"))   
+
+    if epoch%opt.checkpoint == 0:
+        if save_on_master():
+            torch.save({'epoch': epoch, 
+                        'state_dict': model_restoration.state_dict(),
+                        'optimizer' : optimizer.state_dict()
+                        }, os.path.join(model_dir,"model_epoch_{}.pth".format(epoch))) 
 print("Now time is : ",datetime.datetime.now().isoformat())

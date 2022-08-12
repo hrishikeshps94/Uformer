@@ -9,15 +9,15 @@ class Options():
         # global settings
         parser.add_argument('--batch_size', type=int, default=16, help='batch size')
         parser.add_argument('--nepoch', type=int, default=250, help='training epochs')
-        parser.add_argument('--train_workers', type=int, default=4, help='train_dataloader workers')
-        parser.add_argument('--eval_workers', type=int, default=4, help='eval_dataloader workers')
+        parser.add_argument('--train_workers', type=int, default=8, help='train_dataloader workers')
+        parser.add_argument('--eval_workers', type=int, default=8, help='eval_dataloader workers')
         parser.add_argument('--dataset', type=str, default ='CVPR20')
         parser.add_argument('--pretrain_weights',type=str, default='./log/Uformer_B/models/model_best.pth', help='path of pretrained_weights')
         parser.add_argument('--optimizer', type=str, default ='adamw', help='optimizer for training')
         parser.add_argument('--lr_initial', type=float, default=0.0002, help='initial learning rate')
         parser.add_argument('--step_lr', type=int, default=50, help='weight decay')
         parser.add_argument('--weight_decay', type=float, default=0.02, help='weight decay')
-        parser.add_argument('--gpu', type=str, default='0', help='GPUs') # Update the code with GPU Ids of DGX
+        parser.add_argument('--gpu_ids', type=str, default='0', help='GPUs') # Update the code with GPU Ids of DGX
         parser.add_argument('--arch', type=str, default ='Uformer_B',  help='archtechture')
         parser.add_argument('--mode', type=str, default ='demoering',  help='image restoration mode')
         parser.add_argument('--dd_in', type=int, default=3, help='dd_in')
@@ -51,8 +51,8 @@ class Options():
         parser.add_argument('--train_ps', type=int, default=128, help='patch size of training sample')
         parser.add_argument('--val_ps', type=int, default=128, help='patch size of validation sample')
         parser.add_argument('--resume', action='store_true',default=False)
-        parser.add_argument('--train_dir', type=str, default ='/mnt/c/Users/Hrishikesh/Desktop/hrishi/WORK/RESEARCH/2022/cvip/ds/train',  help='dir of train data')
-        parser.add_argument('--val_dir', type=str, default ='/mnt/c/Users/Hrishikesh/Desktop/hrishi/WORK/RESEARCH/2022/cvip/ds/val',  help='dir of train data')
+        parser.add_argument('--train_dir', type=str, default ='/mnt/c/Users/Hrishikesh/Desktop/hrishi/WORK/RESEARCH/2022/journal-2022/UDC/ds/train/Poled/',  help='dir of train data')
+        parser.add_argument('--val_dir', type=str, default ='/mnt/c/Users/Hrishikesh/Desktop/hrishi/WORK/RESEARCH/2022/journal-2022/UDC/ds/test/Poled/val_images/',  help='dir of train data')
         parser.add_argument('--warmup', action='store_true', default=True, help='warmup') 
         parser.add_argument('--warmup_epochs', type=int,default=10, help='epochs for warmup') 
 
@@ -60,4 +60,6 @@ class Options():
         parser.add_argument("--local_rank", type=int,default=-1,help='DDP parameter, do not modify')#不需要赋值，启动命令 torch.distributed.launch会自动赋值
         parser.add_argument("--distribute",action='store_true',help='whether using multi gpu train')
         parser.add_argument("--distribute_mode",type=str,default='DDP',help="using which mode to ")
+        parser.add_argument("--dist_url", default="env://", type=str, help="""url used to set up
+        distributed training; see https://pytorch.org/docs/stable/distributed.html""")
         return parser

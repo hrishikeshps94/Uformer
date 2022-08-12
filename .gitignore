@@ -1,3 +1,10 @@
 /LICENSE
 /__pycache__
 /logs
+test_ds
+LCD/
+utils/__pycache__/
+weights/
+utils/__pycache__/
+dummy.py
+dataset/__pycache__/dataset_demoire.cpython-37.pyc
