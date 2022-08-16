@@ -36,34 +36,7 @@ from tqdm import tqdm
 from warmup_scheduler import GradualWarmupScheduler
 from torch.optim.lr_scheduler import StepLR
 from timm.utils import NativeScaler
-from torchsummary import summary
 from utils import *
-# from utils.loader import  get_training_data,get_validation_data
-
-######### Set GPUs ###########
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu_ids
-
-
-###########DDP Intilaiser#########################
-
-if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
-    opt.rank = int(os.environ["RANK"])
-    opt.world_size = int(os.environ['WORLD_SIZE'])
-    opt.gpu = int(os.environ['LOCAL_RANK'])
-elif torch.cuda.is_available():
-    print('Will run the code on one GPU.')
-    opt.rank, opt.gpu, opt.world_size = 0, 0, 1
-    os.environ['MASTER_ADDR'] = '127.0.0.1'
-    os.environ['MASTER_PORT'] = '29500'
-dist.init_process_group(backend="nccl",init_method=opt.dist_url,world_size=opt.world_size,rank=opt.rank)
-
-torch.cuda.set_device(opt.gpu)
-print('| distributed init (rank {}): {}'.format(
-    opt.rank, opt.dist_url), flush=True)
-dist.barrier()
-
-torch.backends.cudnn.benchmark = True
 
 
 ######### Logs dir ###########
@@ -78,10 +51,10 @@ utils.mkdir(result_dir)
 utils.mkdir(model_dir)
 
 # ######### Set Seeds ###########
-random.seed(1234)
-np.random.seed(1234)
-torch.manual_seed(1234)
-torch.cuda.manual_seed_all(1234)
+# random.seed(1234)
+# np.random.seed(1234)
+# torch.manual_seed(1234)
+# torch.cuda.manual_seed_all(1234)
 
 ######### Model ###########
 model_restoration = utils.get_arch(opt)
@@ -101,11 +74,7 @@ else:
 
 
 ######### DataParallel ########### 
-
-# model_restoration = torch.nn.DataParallel (model_restoration) 
 model_restoration.cuda() 
-# print(summary(model_restoration,(3,256,256)))
-model_restoration = torch.nn.parallel.DistributedDataParallel(model_restoration,[opt.gpu])
      
 
 ######### Scheduler ###########
@@ -151,13 +120,11 @@ criterion = CharbonnierLoss().cuda()
 print('===> Loading datasets')
 img_options_train = {'patch_size':opt.train_ps}
 train_dataset = get_training_data(opt.train_dir, img_options_train)
-train_sampler = torch.utils.data.DistributedSampler(train_dataset, shuffle=True)
-train_loader = DataLoader(dataset=train_dataset, batch_size=opt.batch_size, shuffle=False, 
-        num_workers=opt.train_workers, pin_memory=False, drop_last=False,sampler=train_sampler)
+train_loader = DataLoader(dataset=train_dataset, batch_size=opt.batch_size, shuffle=True, 
+        num_workers=opt.train_workers, pin_memory=False, drop_last=False)
 val_dataset = get_validation_data(opt.val_dir)
-val_sampler = torch.utils.data.DistributedSampler(val_dataset, shuffle=False)
 val_loader = DataLoader(dataset=val_dataset, batch_size=1, shuffle=False, 
-        num_workers=opt.eval_workers, pin_memory=False, drop_last=False,sampler=val_sampler)
+        num_workers=opt.eval_workers, pin_memory=False, drop_last=False)
 
 len_trainset = train_dataset.__len__()
 len_valset = val_dataset.__len__()
@@ -191,8 +158,6 @@ print("\nEvaluation after every {} Iterations !!!\n".format(eval_now))
 loss_scaler = NativeScaler()
 torch.cuda.empty_cache()
 for epoch in range(start_epoch, opt.nepoch + 1):
-    train_loader.sampler.set_epoch(epoch)
-    val_loader.sampler.set_epoch(epoch)
     epoch_start_time = time.time()
     epoch_loss = 0
     train_id = 1
@@ -226,7 +191,6 @@ for epoch in range(start_epoch, opt.nepoch + 1):
                         restored = model_restoration(input_)
                     restored = torch.clamp(restored,0,1)  
                     psnr_val_rgb.append(utils.batch_PSNR(restored, target, False).item())
-                torch.cuda.synchronize()#####
                 psnr_val_rgb = sum(psnr_val_rgb)/len_valset
                 
                 if psnr_val_rgb > best_psnr:
