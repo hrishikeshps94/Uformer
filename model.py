@@ -26,21 +26,22 @@ class FastLeFF(nn.Module):
         self.dim = dim
         self.hidden_dim = hidden_dim
 
-    def forward(self, x):
+    def forward(self, x,im_shape):
         # bs x hw x c
-        bs, hw, c = x.size()
-        hh = int(math.sqrt(hw))
+        # bs, hw, c = x.size()
+        # hh = int(math.sqrt(hw))
+        H,W = im_shape
 
         x = self.linear1(x)
 
         # spatial restore
-        x = rearrange(x, ' b (h w) (c) -> b c h w ', h = hh, w = hh)
+        x = rearrange(x, ' b (h w) (c) -> b c h w ', h = H, w = W)
         # bs,hidden_dim,32x32
 
         x = self.dwconv(x)
 
         # flaten
-        x = rearrange(x, ' b c h w -> b (h w) c', h = hh, w = hh)
+        x = rearrange(x, ' b c h w -> b (h w) c', h = H, w = W)
 
         x = self.linear2(x)
 
@@ -211,11 +212,12 @@ class LPU(nn.Module):
         )
         self.in_channels = in_channels
         self.out_channels = out_channels
-    def forward(self, x):
+    def forward(self, x,im_shape):
         B, L, C = x.shape
+        H,W = im_shape
         # import pdb;pdb.set_trace()
-        H = int(math.sqrt(L))
-        W = int(math.sqrt(L))
+        # H = int(math.sqrt(L))
+        # W = int(math.sqrt(L))
         x = x.transpose(1, 2).contiguous().view(B, C, H, W)
         result = (self.depthwise(x) + x).flatten(2).transpose(1,2).contiguous()  # B H*W C
         return result
@@ -663,21 +665,22 @@ class LeFF(nn.Module):
         self.hidden_dim = hidden_dim
         self.eca = eca_layer_1d(dim) if use_eca else nn.Identity()
 
-    def forward(self, x):
+    def forward(self, x,im_shape):
         # bs x hw x c
-        bs, hw, c = x.size()
-        hh = int(math.sqrt(hw))
+        # bs, hw, c = x.size()
+        # hh = int(math.sqrt(hw))
+        H,W = im_shape
 
         x = self.linear1(x)
 
         # spatial restore
-        x = rearrange(x, ' b (h w) (c) -> b c h w ', h = hh, w = hh)
+        x = rearrange(x, ' b (h w) (c) -> b c h w ', h = H, w = W)
         # bs,hidden_dim,32x32
 
         x = self.dwconv(x)
 
         # flaten
-        x = rearrange(x, ' b c h w -> b (h w) c', h = hh, w = hh)
+        x = rearrange(x, ' b c h w -> b (h w) c', h = H, w = W)
 
         x = self.linear2(x)
         x = self.eca(x)
@@ -736,11 +739,12 @@ class Downsample(nn.Module):
         self.in_channel = in_channel
         self.out_channel = out_channel
 
-    def forward(self, x):
+    def forward(self, x,im_shape):
         B, L, C = x.shape
         # import pdb;pdb.set_trace()
-        H = int(math.sqrt(L))
-        W = int(math.sqrt(L))
+        # H = int(math.sqrt(L))
+        # W = int(math.sqrt(L))
+        H,W = im_shape
         x = x.transpose(1, 2).contiguous().view(B, C, H, W)
         out = self.conv(x).flatten(2).transpose(1,2).contiguous()  # B H*W C
         return out
@@ -762,10 +766,11 @@ class Upsample(nn.Module):
         self.in_channel = in_channel
         self.out_channel = out_channel
         
-    def forward(self, x):
+    def forward(self, x,im_shape):
         B, L, C = x.shape
-        H = int(math.sqrt(L))
-        W = int(math.sqrt(L))
+        # H = int(math.sqrt(L))
+        # W = int(math.sqrt(L))
+        H,W = im_shape
         x = x.transpose(1, 2).contiguous().view(B, C, H, W)
         out = self.deconv(x).flatten(2).transpose(1,2).contiguous() # B H*W C
         return out
@@ -825,10 +830,11 @@ class OutputProj(nn.Module):
         self.in_channel = in_channel
         self.out_channel = out_channel
 
-    def forward(self, x):
+    def forward(self, x,im_shape):
         B, L, C = x.shape
-        H = int(math.sqrt(L))
-        W = int(math.sqrt(L))
+        # H = int(math.sqrt(L))
+        # W = int(math.sqrt(L))
+        H,W = im_shape
         x = x.transpose(1, 2).view(B, C, H, W)
         x = self.proj(x)
         if self.norm is not None:
@@ -905,10 +911,11 @@ class LeWinTransformerBlock(nn.Module):
         return f"dim={self.dim}, input_resolution={self.input_resolution}, num_heads={self.num_heads}, " \
                f"win_size={self.win_size}, shift_size={self.shift_size}, mlp_ratio={self.mlp_ratio},modulator={self.modulator}"
 
-    def forward(self, x, mask=None):
+    def forward(self, x,im_shape, mask=None):
         B, L, C = x.shape
-        H = int(math.sqrt(L))
-        W = int(math.sqrt(L))
+        # H = int(math.sqrt(L))
+        # W = int(math.sqrt(L))
+        H,W = im_shape
         # H=1024
         # W=2048
         
@@ -986,7 +993,7 @@ class LeWinTransformerBlock(nn.Module):
 
         # FFN
         x = shortcut + self.drop_path(x)
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        x = x + self.drop_path(self.mlp(self.norm2(x),im_shape))
         del attn_mask
         return x
 
@@ -1053,12 +1060,12 @@ class BasicUformerLayer(nn.Module):
     def extra_repr(self) -> str:
         return f"dim={self.dim}, input_resolution={self.input_resolution}, depth={self.depth}"    
 
-    def forward(self, x, mask=None):
+    def forward(self, x, im_shape,mask=None):
         for blk in self.blocks:
             if self.use_checkpoint:
                 x = checkpoint.checkpoint(blk, x)
             else:
-                x = blk(x,mask)
+                x = blk(x,im_shape,mask)
         return x
 
     def flops(self):
@@ -1269,41 +1276,42 @@ class Uformer(nn.Module):
         return f"embed_dim={self.embed_dim}, token_projection={self.token_projection}, token_mlp={self.mlp},win_size={self.win_size}"
 
     def forward(self, x, mask=None):
+        n,c,h,w = x.shape
         # Input Projection
         y = self.input_proj(x)
         y = self.pos_drop(y)
         #Encoder
-        conv0 = self.encoderlayer_0(y,mask=mask)
-        pool0 = self.dowsample_0(conv0)
-        conv1 = self.encoderlayer_1(pool0,mask=mask)
-        pool1 = self.dowsample_1(conv1)
-        conv2 = self.encoderlayer_2(pool1,mask=mask)
-        pool2 = self.dowsample_2(conv2)
-        conv3 = self.encoderlayer_3(pool2,mask=mask)
-        pool3 = self.dowsample_3(conv3)
+        conv0 = self.encoderlayer_0(y,mask=mask,im_shape = (h,w))
+        pool0 = self.dowsample_0(conv0,im_shape = (h,w))
+        conv1 = self.encoderlayer_1(pool0,mask=mask,im_shape = (h//2,w//2))
+        pool1 = self.dowsample_1(conv1,im_shape = (h//2,w//2))
+        conv2 = self.encoderlayer_2(pool1,mask=mask,im_shape = (h//4,w//4))
+        pool2 = self.dowsample_2(conv2,im_shape = (h//4,w//4))
+        conv3 = self.encoderlayer_3(pool2,mask=mask,im_shape = (h//8,w//8))
+        pool3 = self.dowsample_3(conv3,im_shape = (h//8,w//8))
 
         # Bottleneck
-        conv4 = self.conv(pool3, mask=mask)
+        conv4 = self.conv(pool3, mask=mask,im_shape = (h//16,w//16))
 
         #Decoder
-        up0 = self.upsample_0(conv4)
+        up0 = self.upsample_0(conv4,im_shape = (h//16,w//16))
         deconv0 = torch.cat([up0,conv3],-1)
-        deconv0 = self.decoderlayer_0(deconv0,mask=mask)
+        deconv0 = self.decoderlayer_0(deconv0,mask=mask,im_shape = (h//8,w//8))
         
-        up1 = self.upsample_1(deconv0)
+        up1 = self.upsample_1(deconv0,im_shape = (h//8,w//8))
         deconv1 = torch.cat([up1,conv2],-1)
-        deconv1 = self.decoderlayer_1(deconv1,mask=mask)
+        deconv1 = self.decoderlayer_1(deconv1,mask=mask,im_shape = (h//4,w//4))
 
-        up2 = self.upsample_2(deconv1)
+        up2 = self.upsample_2(deconv1,im_shape = (h//4,w//4))
         deconv2 = torch.cat([up2,conv1],-1)
-        deconv2 = self.decoderlayer_2(deconv2,mask=mask)
+        deconv2 = self.decoderlayer_2(deconv2,mask=mask,im_shape = (h//2,w//2))
 
-        up3 = self.upsample_3(deconv2)
+        up3 = self.upsample_3(deconv2,im_shape = (h//2,w//2))
         deconv3 = torch.cat([up3,conv0],-1)
-        deconv3 = self.decoderlayer_3(deconv3,mask=mask)
+        deconv3 = self.decoderlayer_3(deconv3,mask=mask,im_shape = (h,w))
 
         # Output Projection
-        y = self.output_proj(deconv3)
+        y = self.output_proj(deconv3,im_shape = (h,w))
         return x + y if self.dd_in ==3 else y
 
     def flops(self):
